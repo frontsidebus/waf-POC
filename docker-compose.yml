@@ -1,30 +1,37 @@
 version: '3.8'
 
 services:
-  # 1. Central Policy & Logging Service (The Brain)
-  waf-logger:
+  # 1. Database (MongoDB)
+  mongo:
+    image: mongo:latest
+    container_name: waf-mongo
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+
+  # 2. Central Policy & Logging Service (Renamed to waf-policy)
+  waf-policy:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python logger_service.py
-    container_name: waf-logger
+    command: python policy_service.py
+    container_name: waf-policy
     ports:
-      - "5000:5000" # Admin UI & API
+      - "5000:5000"
     environment:
-      - FLASK_APP=logger_service.py
+      - FLASK_APP=policy_service.py
       - ADMIN_USER=admin
       - ADMIN_PASS=admin
-      # --- OAuth Configuration ---
-      # Leave these empty to disable OAuth and use Basic Auth only
+      - MONGO_URI=mongodb://waf-mongo:27017/
+      # OAuth & Secrets
       - OAUTH_CLIENT_ID=
       - OAUTH_CLIENT_SECRET=
-      # Secure session key (Optional: auto-generated if missing)
       - FLASK_SECRET=change_me_to_something_random
-    volumes:
-      - ./waf_data:/app/waf_data
+    depends_on:
+      - mongo
     restart: always
 
-  # 2. Input Filter Service (The Entry Point)
+  # 3. Input Filter Service
   waf-input:
     build:
       context: .
@@ -32,16 +39,17 @@ services:
     command: python input_filter.py
     container_name: waf-input
     ports:
-      - "8080:8080" # Public Access Port
+      - "8080:8080"
     environment:
-      - LOGGER_URL=http://waf-logger:5000
+      # Updated connection URL to point to waf-policy
+      - LOGGER_URL=http://waf-policy:5000
       - NEXT_HOP_URL=http://waf-output:8081
     depends_on:
-      - waf-logger
+      - waf-policy
       - waf-output
     restart: always
 
-  # 3. Output Filter Service (The Exit Guard)
+  # 4. Output Filter Service
   waf-output:
     build:
       context: .
@@ -49,16 +57,17 @@ services:
     command: python output_filter.py
     container_name: waf-output
     expose:
-      - "8081" # Internal only, accessed by waf-input
+      - "8081"
     environment:
-      - LOGGER_URL=http://waf-logger:5000
+      # Updated connection URL to point to waf-policy
+      - LOGGER_URL=http://waf-policy:5000
       - TARGET_URL=http://open-webui:8080
     depends_on:
-      - waf-logger
+      - waf-policy
       - open-webui
     restart: always
 
-  # 4. Target Application
+  # 5. Target Application
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
@@ -68,3 +77,4 @@ services:
 
 volumes:
   open-webui-data:
+  mongo-data:

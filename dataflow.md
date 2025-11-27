@@ -18,8 +18,8 @@ graph TD
         Policy["Policy & Logger Service<br>(Port 5000)"]
         OWUI["OpenWebUI Container<br>(Internal)"]
         
-        %% Data Store
-        DB[("SQLite DB<br>(Rules & Logs)")]
+        %% Data Store - CHANGED to MongoDB
+        DB[("MongoDB Container<br>(Rules & Logs)")]
     end
 
     %% --- Main Request Flow ---
@@ -45,7 +45,6 @@ graph TD
     Policy <--> DB
 
     %% Styling
-    %% Dark theme colors with high contrast white text
     classDef service fill:#330066,stroke:#9932cc,stroke-width:2px,color:#fff;
     classDef storage fill:#2f4f4f,stroke:#d3d3d3,stroke-width:2px,color:#fff;
     classDef external fill:#1a1a1a,stroke:#ffffff,stroke-width:3px,color:#fff;

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # The WAF Proxy
+  waf:
+    build: .
+    container_name: openwebui-waf
+    ports:
+      - "8080:8080" # Host Port : Container Port
+    environment:
+      - TARGET_URL=http://open-webui:8080 # Points to the service name below
+      - WAF_PORT=8080
+      - PYTHONUNBUFFERED=1
+      # Uncomment and fill these to enable Google Login
+      # - OAUTH_CLIENT_ID=your-client-id
+      # - OAUTH_CLIENT_SECRET=your-client-secret
+      # - ADMIN_USER=admin
+      # - ADMIN_PASS=securepassword
+    volumes:
+      # Persist the WAF database (rules/logs)
+      - ./waf_data:/app/waf_data
+    depends_on:
+      - open-webui
+    restart: always
+
+  # The Actual OpenWebUI Application
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    # Note: We do NOT map ports here, forcing traffic through the WAF.
+    # If you need direct access for debugging, uncomment below:
+    # ports:
+    #   - "3000:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    restart: always
+
+volumes:
+  open-webui-data:

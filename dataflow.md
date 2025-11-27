@@ -1,4 +1,5 @@
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 graph TD
     %% External Entities
     subgraph External["External World"]
@@ -44,9 +45,10 @@ graph TD
     Policy <--> DB
 
     %% Styling
-    classDef service fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef storage fill:#eee,stroke:#333,stroke-width:2px;
-    classDef external fill:#fff,stroke:#333,stroke-width:4px;
+    %% Dark theme colors with high contrast white text
+    classDef service fill:#330066,stroke:#9932cc,stroke-width:2px,color:#fff;
+    classDef storage fill:#2f4f4f,stroke:#d3d3d3,stroke-width:2px,color:#fff;
+    classDef external fill:#1a1a1a,stroke:#ffffff,stroke-width:3px,color:#fff;
     
     class Input,Output,Policy,OWUI service;
     class DB storage;

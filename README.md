@@ -1,65 +1,53 @@
-# **OpenWebUI Web Application Firewall (WAF)**
+# **OpenWebUI Web Application Firewall (WAF) \- v2**
 
-A lightweight, Python-based reverse proxy designed to sit in front of [OpenWebUI](https://github.com/open-webui/open-webui). It intercepts traffic to filter malicious inputs (SQL injection, XSS, Command Injection) and allows administrators to define custom regex blocking rules via a web interface.
+A Python-based reverse proxy for [OpenWebUI](https://github.com/open-webui/open-webui). This tool filters both **Input** (malicious prompts sent to the AI) and **Output** (sensitive data leaking from the AI), providing a secure layer between users and your LLM.
 
 ## **Features**
 
-* **Reverse Proxy:** Seamlessly forwards traffic to OpenWebUI while inspecting requests.  
-* **Input Filtering:** Blocks requests matching defined security patterns before they reach the LLM or backend.  
-* **Admin Dashboard:** A built-in web UI to view logs, toggle rules, and add new custom filters.  
-* **OWASP Signatures:** Pre-loaded with basic signatures for common web vulnerabilities (SQLi, XSS, etc.).  
-* **Streaming Support:** Supports the streaming nature of LLM responses.
+* **Dual-Direction Filtering:**  
+  * **Input (Inbound):** Blocks SQL Injection, XSS, and Jailbreak attempts before they reach the backend.  
+  * **Output (Outbound):** Scans LLM responses for PII (SSNs, Credit Cards) and sensitive keys.  
+* **Response Sanitization:** If sensitive data is detected in the response, the WAF intercepts it and replaces the entire message with a generic, safe template.  
+* **Admin Dashboard:** Manage rules, view security logs, and configure the generic response template.  
+* **Configurable Scope:** Rules can be set to scan Inputs, Outputs, or Both.
 
-## **Prerequisites**
+## **Important Note on Streaming**
 
-* Python 3.8+  
-* OpenWebUI installed and running (defaulting to port 3000).
+To effectively scan output for patterns like Credit Card numbers (which might be split across data chunks), **this WAF buffers the entire response** from OpenWebUI before sending it to the user.
 
-## **Installation**
+* **Trade-off:** You will lose the "typing" effect (streaming). The user will see a loading state until the full response is ready.  
+* **Benefit:** Prevents partial leakage of sensitive data.
 
-1. Download the WAF:  
-   Save the provided python script as waf\_proxy.py.  
-2. Install Dependencies:  
-   This project requires Flask for the server and Requests for proxying.  
+## **Installation & Usage**
+
+1. **Requirements:**  
    pip install flask requests
 
-## **Usage**
+2. **Run the WAF:**  
+   python waf\_proxy.py
 
-### **1\. Start OpenWebUI**
-
-Ensure your target application (OpenWebUI) is running. By default, the WAF assumes it is on port 3000\.  
-\# Example (if using Docker)  
-docker run \-d \-p 3000:8080 ghcr.io/open-webui/open-webui:main
-
-### **2\. Start the WAF**
-
-Run the python script. It will create a local SQLite database (waf\_rules.db) automatically on the first run.  
-python waf\_proxy.py
-
-### **3\. Access the Application**
-
-* **User Access:** Point your browser to http://localhost:8080 instead of port 3000\. The WAF will proxy your traffic.  
-* **Admin Dashboard:** Manage rules at http://localhost:8080/waf-admin.
+3. **Access:**  
+   * **App:** http://localhost:8080  
+   * **Admin:** http://localhost:8080/waf-admin
 
 ## **Configuration**
 
-You can modify the following variables at the top of waf\_proxy.py to match your environment:  
-\# The URL where OpenWebUI is actually running  
-TARGET\_URL \= "http://localhost:3000" 
+### **Managing Rules**
 
-\# The port this WAF will listen on  
-WAF\_PORT \= 8080
+In the Admin Dashboard, when adding a rule, select the **Scope**:
 
-## **Managing Rules**
+* **Input:** Blocks the request immediately. (Example: DROP TABLE)  
+* **Output:** Allows the request, but checks the AI's answer. If it matches, the answer is replaced. (Example: \\d{3}-\\d{2}-\\d{4} for SSN).
 
-Navigate to http://localhost:8080/waf-admin.
+### **Changing the Sanitization Message**
 
-* **Toggle Rules:** Click the switch next to a rule to enable or disable it instantly.  
-* **Add Custom Rules:** \* **Type:** Choose "Regex" for advanced pattern matching or "String" for exact text matching.  
-  * **Pattern:** Enter the content you want to block (e.g., internal\_project\_alpha or \\d{3}-\\d{2}-\\d{4} for SSNs).  
-* **View Logs:** Check the "Security Logs" tab to see blocked requests, including the IP address and the specific text snippet that triggered the block.
+1. Go to **Settings** in the Admin UI.  
+2. Edit the "Generic Response Template".  
+3. This message will be shown to the user whenever an Output rule triggers.
 
-## **Troubleshooting**
+### **Default Rules**
 
-* **Connection Error:** If you see a "502 Bad Gateway" or connection error, ensure OpenWebUI is actually running on the TARGET\_URL (port 3000).  
-* **False Positives:** If legitimate prompts are being blocked (e.g., asking for code examples involving SQL), go to the Admin Dashboard and disable the specific "OWASP-SQLi" rule, or refine the regex.
+The WAF comes pre-seeded with:
+
+* **Input:** OWASP SQLi, OWASP XSS, System Overrides.  
+* **Output:** SSN patterns, Credit Card patterns, API Key regex.

@@ -1,83 +1,96 @@
-# OpenWebUI Web Application Firewall (WAF) - v2
+# Microservices WAF for OpenWebUI
 
-A Python-based reverse proxy for OpenWebUI. This tool filters both Input (malicious prompts sent to the AI) and Output (sensitive data leaking from the AI), providing a secure layer between users and your LLM.
+A distributed Web Application Firewall architecture that protects OpenWebUI by separating concerns into three distinct microservices. This setup acts as a secure gateway, filtering both incoming prompts and outgoing LLM responses.
 
-## Features
+## Architecture
 
-* **Dual-Direction Filtering:**
-  * **Input (Inbound):** Blocks SQL Injection, XSS, and Jailbreak attempts before they reach the backend.
-  * **Output (Outbound):** Scans LLM responses for PII (SSNs, Credit Cards) and sensitive keys.
-* **Response Sanitization:** If sensitive data is detected in the response, the WAF intercepts it and replaces the entire message with a generic, safe template.
-* **Admin Dashboard:** Manage rules, view security logs, and configure the generic response template.
-* **Authentication:** Supports Google OAuth or Basic Auth (Username/Password).
-* **Configurable Scope:** Rules can be set to scan Inputs, Outputs, or Both.
+### 1. Input Filter (Port 8080)
 
-## Important Note on Streaming
+* **Role:** Public-facing Gatekeeper.
+* **Function:** Blocks malicious inputs (SQL Injection, Jailbreaks, XSS) before they reach the backend.
+* **Flow:** Forwards valid traffic to the Output Filter.
 
-To effectively scan output for patterns like Credit Card numbers (which might be split across data chunks), this WAF buffers the entire response from OpenWebUI before sending it to the user.
+### 2. Output Filter (Internal Port 8081)
 
-* **Trade-off:** You will lose the "typing" effect (streaming). The user will see a loading state until the full response is ready.
-* **Benefit:** Prevents partial leakage of sensitive data.
+* **Role:** Exit Guard.
+* **Function:** Buffers LLM responses to scan for and redact PII (SSNs, Credit Cards, API Keys).
+* **Flow:** Forwards sanitized traffic to the User.
 
-## Docker Deployment (Recommended)
+### 3. Policy & Logger (Port 5000)
 
-The easiest way to run the WAF is using Docker Compose. This ensures the WAF and OpenWebUI run in the same network, and you can lock down direct access to OpenWebUI.
+* **Role:** Control Plane.
+* **Function:** Central database for Rules and Logs. Provides an API for filters to fetch rules and an Admin UI for management.
 
-### 1. Prepare Files
+## Prerequisites
 
-Ensure you have `waf_proxy.py`, `Dockerfile`, and `docker-compose.yml` in the same directory.
+* **Docker:** Ensure Docker Engine is installed and running.
+* **Docker Compose:** Required to orchestrate the multi-container setup.
 
-### 2. Start Services
+## Getting Started
+
+### 1. Project Setup
+
+Ensure your project directory contains the following files (generated from the provided code):
+
+* `docker-compose.yml`
+* `Dockerfile`
+* `logger_service.py`
+* `input_filter.py`
+* `output_filter.py`
+
+### 2. Configure Credentials
+
+Open `docker-compose.yml` and locate the `waf-logger` service. Update the environment variables to set your desired admin credentials:
+
+```yaml
+  waf-logger:
+    # ...
+    environment:
+      - FLASK_APP=logger_service.py
+      - ADMIN_USER=my_secure_username  # <--- Change this
+      - ADMIN_PASS=my_secure_password  # <--- Change this
+```
+
+### 3. Run the Stack
+
+This command builds the WAF images and pulls the latest OpenWebUI image.
 
 ```bash
 docker-compose up -d --build
 ```
 
-### 3. Access
+### 4. Access Points
 
-* **App:** `http://localhost:8080` (Traffic flows WAF -> OpenWebUI)
-* **Admin UI:** `http://localhost:8080/waf-admin`
-* **Direct OpenWebUI:** Blocked (unless you uncomment ports in docker-compose).
+* **Main Application:** http://localhost:8080
+  * Access OpenWebUI through this URL. Traffic is automatically filtered.
+* **Admin Dashboard:** http://localhost:5000/waf-admin
+  * Login using the credentials configured in step 2.
+  * Use this dashboard to view security logs and manage blocking rules.
 
-## Manual Installation (Local Python)
-
-### 1. Requirements
-
-```bash
-pip install flask requests
-```
-
-### 2. Run the WAF
-
-```bash
-# Set environment variables if needed
-export TARGET_URL="http://localhost:3000"
-python waf_proxy.py
-```
-
-## Configuration
+## Configuration & Customization
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TARGET_URL` | URL of the OpenWebUI instance | `http://localhost:3000` |
-| `WAF_PORT` | Port the WAF listens on | `8080` |
-| `ADMIN_USER` | Basic Auth Username | `admin` |
-| `ADMIN_PASS` | Basic Auth Password | `admin` |
-| `OAUTH_CLIENT_ID` | Google OAuth Client ID | (Empty/Disabled) |
-| `OAUTH_CLIENT_SECRET` | Google OAuth Secret | (Empty/Disabled) |
+You can customize the services by modifying `docker-compose.yml`:
 
-## Managing Rules
+| Service | Variable | Description | Default |
+|---------|----------|-------------|---------|
+| waf-logger | `ADMIN_USER` | Username for the Admin Dashboard. | `admin` |
+| waf-logger | `ADMIN_PASS` | Password for the Admin Dashboard. | `admin` |
+| waf-input | `LOGGER_URL` | Internal URL to reach the Policy Service. | `http://waf-logger:5000` |
+| waf-output | `TARGET_URL` | Internal URL of the OpenWebUI container. | `http://open-webui:8080` |
 
-In the Admin Dashboard (`/waf-admin`), when adding a rule, select the **Scope**:
+### OpenWebUI Integration
 
-* **Input:** Blocks the request immediately. (Example: `DROP TABLE`)
-* **Output:** Allows the request, but checks the AI's answer. If it matches, the answer is replaced.
+This architecture runs OpenWebUI as a container named `open-webui` within the same Docker network.
 
-## Default Rules
+* The `waf-output` service forwards traffic to `http://open-webui:8080`.
+* **Security Note:** OpenWebUI is not exposed to the host machine directly in the default configuration. This forces all traffic to pass through the WAF (Port 8080).
 
-The WAF comes pre-seeded with:
+## Development Notes
 
-* **Input:** OWASP SQLi, OWASP XSS, System Overrides.
-* **Output:** SSN patterns, Credit Card patterns, API Key regex.
+* **Decoupled:** The filters do not share a database with the logger; they communicate via HTTP API.
+* **Scalability:** You can scale the `waf-input` container independently of the `waf-output` container in a swarm/Kubernetes setup.
+* **Data Persistence:**
+  * WAF Rules and Logs are stored in `./waf_data` (mapped to the `waf-logger` container).
+  * OpenWebUI data is stored in the `open-webui-data` volume.

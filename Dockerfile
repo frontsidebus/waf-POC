@@ -1,19 +1,20 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
 # Install dependencies
 RUN pip install --no-cache-dir flask requests
 
-# Copy the application code
-COPY waf_proxy.py .
+# Copy all service scripts
+COPY logger_service.py .
+COPY input_filter.py .
+COPY output_filter.py .
 
-# Environment variables to ensure output logs show up immediately
+# Create data directory
+RUN mkdir -p /app/waf_data
+
+# Environment settings
 ENV PYTHONUNBUFFERED=1
 
-# Expose the port the app runs on
-EXPOSE 8080
-
-# Run the application
-CMD ["python", "waf_proxy.py"]
+# Default command (can be overridden by docker-compose)
+CMD ["python", "logger_service.py"]

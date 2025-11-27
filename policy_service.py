@@ -13,6 +13,8 @@ from bson.objectid import ObjectId
 PORT = 5000
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
+# Added API Token support
+API_TOKEN = os.environ.get("API_TOKEN", "") 
 FLASK_SECRET = os.environ.get("FLASK_SECRET", secrets.token_hex(32))
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 
@@ -35,25 +37,26 @@ def get_db():
     return client.waf_db
 
 def init_db():
-    db = get_db()
-    
-    # Seed Default Rules if empty
-    if db.rules.count_documents({}) == 0:
-        defaults = [
-            {"name": "OWASP-SQLi", "pattern": r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\b.*\b(FROM|INTO|VALUES|TABLE)\b)|(' OR '1'='1)", "type": "regex", "is_active": True, "scope": "input"},
-            {"name": "OWASP-XSS", "pattern": r"<script.*?>.*?</script>", "type": "regex", "is_active": True, "scope": "input"},
-            {"name": "PII-SSN", "pattern": r"\b\d{3}-\d{2}-\d{4}\b", "type": "regex", "is_active": True, "scope": "output"},
-            {"name": "PII-CreditCard", "pattern": r"\b(?:\d[ -]*?){13,16}\b", "type": "regex", "is_active": True, "scope": "output"}
-        ]
-        db.rules.insert_many(defaults)
-        logger.info("Seeded default rules into MongoDB")
-
-    # Seed Default Settings
-    if not db.settings.find_one({"_id": "block_message"}):
-        db.settings.insert_one({"_id": "block_message", "value": "Security Alert: Response redacted."})
+    try:
+        db = get_db()
+        # Seed Default Rules
+        if db.rules.count_documents({}) == 0:
+            defaults = [
+                {"name": "OWASP-SQLi", "pattern": r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\b.*\b(FROM|INTO|VALUES|TABLE)\b)|(' OR '1'='1)", "type": "regex", "is_active": True, "scope": "input"},
+                {"name": "OWASP-XSS", "pattern": r"<script.*?>.*?</script>", "type": "regex", "is_active": True, "scope": "input"},
+                {"name": "PII-SSN", "pattern": r"\b\d{3}-\d{2}-\d{4}\b", "type": "regex", "is_active": True, "scope": "output"},
+                {"name": "PII-CreditCard", "pattern": r"\b(?:\d[ -]*?){13,16}\b", "type": "regex", "is_active": True, "scope": "output"}
+            ]
+            db.rules.insert_many(defaults)
+            logger.info("Seeded default rules into MongoDB")
+        
+        # Seed Settings
+        if not db.settings.find_one({"_id": "block_message"}):
+            db.settings.insert_one({"_id": "block_message", "value": "Security Alert: Response redacted."})
+    except Exception as e:
+        logger.error(f"Database Init Failed: {e}")
 
 def serialize_doc(doc):
-    """Helper to make Mongo documents JSON serializable"""
     if not doc: return None
     doc['id'] = str(doc['_id'])
     del doc['_id']
@@ -63,8 +66,21 @@ def serialize_doc(doc):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # 1. Check for Static API Token (for scripts/curl)
+        auth_header = request.headers.get('Authorization')
+        if API_TOKEN and auth_header:
+            # support "Bearer <token>"
+            token = auth_header.split(" ")[1] if " " in auth_header else auth_header
+            if token == API_TOKEN:
+                return f(*args, **kwargs)
+
+        # 2. Check for Web Session (for browser)
         if 'user' not in session:
+            # If requesting JSON (API), return 401 instead of redirect
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for('login_page'))
+            
         return f(*args, **kwargs)
     return decorated_function
 
@@ -113,10 +129,6 @@ def get_rules():
     scope = request.args.get('scope', 'both')
     query = {"is_active": True}
     if scope != 'both':
-        query["scope"] = scope
-    
-    # Allow filtering input or both, output or both if needed, but simple filter is safer
-    if scope != 'both':
         query = {"is_active": True, "$or": [{"scope": scope}, {"scope": "both"}]}
 
     rules = list(db.rules.find(query))
@@ -139,7 +151,6 @@ def create_rule():
     })
     return jsonify({"status": "created", "id": str(result.inserted_id)}), 201
 
-# Accepts string ID for MongoDB ObjectId
 @app.route('/api/v1/rules/<rid>', methods=['DELETE'])
 @admin_required
 def delete_rule_api(rid):

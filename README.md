@@ -13,9 +13,9 @@ A distributed Web Application Firewall architecture that protects OpenWebUI.
 * Docker & Docker Compose
 * Bash (for the wrapper script)
 
-## Quick Start (Recommended)
+## Quick Start
 
-The easiest way to run the stack is using the included wrapper script. It handles configuration and startup automatically.
+The included wrapper script enforces security guardrails. You must provide an API Token, and it will warn you if you use default passwords.
 
 ### 1. Make the script executable
 
@@ -23,13 +23,16 @@ The easiest way to run the stack is using the included wrapper script. It handle
 chmod +x run-waf.sh
 ```
 
-### 2. Run with default settings
+### 2. Run with auto-generated token (Minimum Requirement)
 
 ```bash
-./run-waf.sh
+# Generates a random token to pass the guardrail
+./run-waf.sh --api-token "$(openssl rand -hex 16)"
 ```
 
-### 3. Run with custom credentials (Secure Production Setup)
+**Note:** The script will ask for confirmation if you use default passwords.
+
+### 3. Secure Production Setup (Recommended)
 
 ```bash
 ./run-waf.sh \
@@ -39,15 +42,22 @@ chmod +x run-waf.sh
   --api-token "MyStaticAuthToken"
 ```
 
+## Guardrails & Error Handling
+
+The wrapper script includes strict checks:
+
+* **Empty Values:** The script will exit with an error if `API_TOKEN`, `MONGO_PASS`, or `ADMIN_PASS` are explicitly empty or missing (in the case of API_TOKEN).
+* **Insecure Defaults:** If you rely on the built-in default passwords (`admin` / `securepassword123`), the script will pause and ask for interactive confirmation before proceeding.
+
 ## Command Line Options
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `--api-token` | Required. Static Bearer Token for REST API. | (None) |
 | `--mongo-user` | MongoDB root username | `admin` |
 | `--mongo-pass` | MongoDB root password | `securepassword123` |
 | `--admin-user` | WAF Dashboard username | `admin` |
 | `--admin-pass` | WAF Dashboard password | `admin` |
-| `--api-token` | Static Bearer Token for REST API access | (Empty) |
 | `--oauth-id` | Google OAuth Client ID | (Empty) |
 | `--oauth-secret` | Google OAuth Client Secret | (Empty) |
 
@@ -68,7 +78,10 @@ To enable "Login with Google":
 3. Run the stack:
 
 ```bash
-./run-waf.sh --oauth-id "YOUR_CLIENT_ID" --oauth-secret "YOUR_CLIENT_SECRET"
+./run-waf.sh \
+  --api-token "mytoken" \
+  --oauth-id "YOUR_CLIENT_ID" \
+  --oauth-secret "YOUR_CLIENT_SECRET"
 ```
 
 ## REST API Access
@@ -86,24 +99,4 @@ curl -X POST http://localhost:5000/api/v1/rules \
     "pattern": "Project X",
     "scope": "both"
   }'
-```
-
-## Manual Deployment (Docker Compose)
-
-If you prefer not to use the wrapper script, you can run standard Docker commands. You must create a `.env` file first.
-
-### 1. Create `.env`
-
-```bash
-MONGO_USER=admin
-MONGO_PASS=password
-ADMIN_USER=admin
-ADMIN_PASS=admin
-FLASK_SECRET=randomstring
-```
-
-### 2. Run Compose
-
-```bash
-docker-compose up -d --build
 ```

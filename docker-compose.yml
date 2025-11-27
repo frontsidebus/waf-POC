@@ -1,15 +1,19 @@
 version: '3.8'
 
 services:
-  # 1. Database (MongoDB)
+  # 1. Database (MongoDB) with Auth
   mongo:
     image: mongo:latest
     container_name: waf-mongo
     restart: always
+    environment:
+      # Inject credentials from .env
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASS:-adminpassword}
     volumes:
       - mongo-data:/data/db
 
-  # 2. Central Policy & Logging Service (Renamed to waf-policy)
+  # 2. Central Policy & Logging Service
   waf-policy:
     build:
       context: .
@@ -20,13 +24,17 @@ services:
       - "5000:5000"
     environment:
       - FLASK_APP=policy_service.py
-      - ADMIN_USER=admin
-      - ADMIN_PASS=admin
-      - MONGO_URI=mongodb://waf-mongo:27017/
-      # OAuth & Secrets
-      - OAUTH_CLIENT_ID=
-      - OAUTH_CLIENT_SECRET=
-      - FLASK_SECRET=change_me_to_something_random
+      # Admin Credentials for UI
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-admin}
+      # API Token for REST Access
+      - API_TOKEN=${API_TOKEN}
+      # Mongo Connection string constructed from variables
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASS:-adminpassword}@waf-mongo:27017/
+      # Secrets
+      - FLASK_SECRET=${FLASK_SECRET:-supersecretkey}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
     depends_on:
       - mongo
     restart: always
@@ -41,7 +49,6 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Updated connection URL to point to waf-policy
       - LOGGER_URL=http://waf-policy:5000
       - NEXT_HOP_URL=http://waf-output:8081
     depends_on:
@@ -59,7 +66,6 @@ services:
     expose:
       - "8081"
     environment:
-      # Updated connection URL to point to waf-policy
       - LOGGER_URL=http://waf-policy:5000
       - TARGET_URL=http://open-webui:8080
     depends_on:

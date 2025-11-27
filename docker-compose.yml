@@ -14,6 +14,12 @@ services:
       - FLASK_APP=logger_service.py
       - ADMIN_USER=admin
       - ADMIN_PASS=admin
+      # --- OAuth Configuration ---
+      # Leave these empty to disable OAuth and use Basic Auth only
+      - OAUTH_CLIENT_ID=
+      - OAUTH_CLIENT_SECRET=
+      # Secure session key (Optional: auto-generated if missing)
+      - FLASK_SECRET=change_me_to_something_random
     volumes:
       - ./waf_data:/app/waf_data
     restart: always

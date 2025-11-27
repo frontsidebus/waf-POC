@@ -1,36 +1,67 @@
 version: '3.8'
 
 services:
-  # The WAF Proxy
-  waf:
-    build: .
-    container_name: openwebui-waf
+  # 1. Central Policy & Logging Service (The Brain)
+  waf-logger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python logger_service.py
+    container_name: waf-logger
     ports:
-      - "8080:8080" # Host Port : Container Port
+      - "5000:5000" # Admin UI & API
     environment:
-      - TARGET_URL=http://open-webui:8080 # Points to the service name below
-      - WAF_PORT=8080
-      - PYTHONUNBUFFERED=1
-      # Uncomment and fill these to enable Google Login
-      # - OAUTH_CLIENT_ID=your-client-id
-      # - OAUTH_CLIENT_SECRET=your-client-secret
-      # - ADMIN_USER=admin
-      # - ADMIN_PASS=securepassword
+      - FLASK_APP=logger_service.py
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin
+      # --- OAuth Configuration ---
+      # Leave these empty to disable OAuth and use Basic Auth only
+      - OAUTH_CLIENT_ID=
+      - OAUTH_CLIENT_SECRET=
+      # Secure session key (Optional: auto-generated if missing)
+      - FLASK_SECRET=change_me_to_something_random
     volumes:
-      # Persist the WAF database (rules/logs)
       - ./waf_data:/app/waf_data
+    restart: always
+
+  # 2. Input Filter Service (The Entry Point)
+  waf-input:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python input_filter.py
+    container_name: waf-input
+    ports:
+      - "8080:8080" # Public Access Port
+    environment:
+      - LOGGER_URL=http://waf-logger:5000
+      - NEXT_HOP_URL=http://waf-output:8081
     depends_on:
+      - waf-logger
+      - waf-output
+    restart: always
+
+  # 3. Output Filter Service (The Exit Guard)
+  waf-output:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python output_filter.py
+    container_name: waf-output
+    expose:
+      - "8081" # Internal only, accessed by waf-input
+    environment:
+      - LOGGER_URL=http://waf-logger:5000
+      - TARGET_URL=http://open-webui:8080
+    depends_on:
+      - waf-logger
       - open-webui
     restart: always
 
-  # The Actual OpenWebUI Application
+  # 4. Target Application
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
-    # Note: We do NOT map ports here, forcing traffic through the WAF.
-    # If you need direct access for debugging, uncomment below:
-    # ports:
-    #   - "3000:8080"
     volumes:
       - open-webui-data:/app/backend/data
     restart: always
